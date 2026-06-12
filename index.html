@@ -640,11 +640,27 @@
             const [isEditingOfficialResults, setIsEditingOfficialResults] = useState(false);
             
             // --- JUNE 12TH EXCEPTION: PRE-FILL SCORES ---
+            const hardcodedJune12Scores = {
+                'G_A_1': { h: 2, a: 0, p: null }, // Mexico 2-0 South Africa
+                'G_A_2': { h: 2, a: 1, p: null }  // South Korea 2-1 Czechia
+            };
+            const enforceHardcodedScores = (scores = {}) => ({ ...scores, ...hardcodedJune12Scores });
+            const enforceLeaguesHardcodedScores = (leagueList = []) => (
+                leagueList.map(league => ({
+                    ...league,
+                    users: (league.users || []).map(user => ({
+                        ...user,
+                        gameState: {
+                            ...(user.gameState || initGameState()),
+                            scores: enforceHardcodedScores(user?.gameState?.scores || {})
+                        }
+                    }))
+                }))
+            );
+            const enforceAdminHardcodedScores = (admin) => ({ ...admin, scores: enforceHardcodedScores(admin?.scores || {}) });
+
             const initGameState = () => ({ 
-                scores: {
-                    'G_A_1': { h: 2, a: 0, p: null }, // Mexico 2-0 South Africa
-                    'G_A_2': { h: 2, a: 1, p: null }  // South Korea 2-1 Czechia
-                }, 
+                scores: enforceHardcodedScores({}), 
                 selectedThirds: [], 
                 bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] }, 
                 progress: 'groups', 
@@ -677,8 +693,8 @@
                         try {
                             const decompressed = LZString.decompressFromEncodedURIComponent(sharedData);
                             const payload = JSON.parse(decompressed);
-                            if (payload.leagues) setLeagues(payload.leagues);
-                            if (payload.adminData) setAdminData(payload.adminData);
+                            if (payload.leagues) setLeagues(enforceLeaguesHardcodedScores(payload.leagues));
+                            if (payload.adminData) setAdminData(enforceAdminHardcodedScores(payload.adminData));
                             setSyncStatus('📎 Shared View');
                         } catch (e) {
                             console.error('Failed to load shared data:', e);
@@ -689,9 +705,9 @@
                     if (JSONBIN_BIN_ID === "FAKE_BIN_ID_12345") {
                         setSyncStatus('Local Mode');
                         const storedLeagues = localStorage.getItem('wc2026_leagues_v26');
-                        if (storedLeagues) setLeagues(JSON.parse(storedLeagues));
+                        if (storedLeagues) setLeagues(enforceLeaguesHardcodedScores(JSON.parse(storedLeagues)));
                         const storedAdmin = localStorage.getItem('wc2026_admin_v26');
-                        if (storedAdmin) setAdminData(JSON.parse(storedAdmin));
+                        if (storedAdmin) setAdminData(enforceAdminHardcodedScores(JSON.parse(storedAdmin)));
                         return;
                     }
                     setSyncStatus('☁️ Loading...');
@@ -699,8 +715,8 @@
                         const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, { headers: { 'X-Master-Key': JSONBIN_API_KEY } });
                         const data = await response.json();
                         if (data.record) {
-                            if (data.record.leagues) setLeagues(data.record.leagues);
-                            if (data.record.adminData) setAdminData(data.record.adminData);
+                            if (data.record.leagues) setLeagues(enforceLeaguesHardcodedScores(data.record.leagues));
+                            if (data.record.adminData) setAdminData(enforceAdminHardcodedScores(data.record.adminData));
                         }
                         setSyncStatus('☁️ Synced');
                     } catch (error) { setSyncStatus('⚠️ Offline'); }
@@ -881,7 +897,6 @@
 
             const generateBracket = () => {
                 if (gameState.isLocked && !isEditingOfficialResults) { setView('bracket'); return; }
-                if (!allGroupsComplete()) return alert("Please complete all 72 Group Stage matches first!");
                 
                 // Bug 2 fix: if admin has locked phase 1 and generated the official bracket,
                 // copy that r32 structure (teams only) so all users predict knockouts on real teams.
@@ -891,6 +906,8 @@
                     setView('bracket');
                     return;
                 }
+                
+                if (!allGroupsComplete()) return alert("Please complete all 72 Group Stage matches first!");
 
                 const standingsToUse = isEditingOfficialResults ? adminStandings : allStandings;
                 const top8Thirds = getTop8Thirds(standingsToUse);
@@ -938,11 +955,13 @@
             const executeAutoFill = (mode) => {
                 setShowAutoFillModal(false);
                 if (gameState.isLocked && !isEditingOfficialResults) return;
-                if (!isEditingOfficialResults && adminData.phase1Locked && mode === 'groups') return alert("Groups are locked!");
                 
                 const newScores = { ...gameState.scores };
                 
                 if (mode === 'full' || mode === 'groups') {
+                    if (!isEditingOfficialResults && adminData.phase1Locked) {
+                        return alert("Group Stage is locked by Admin! You cannot change group scores.");
+                    }
                     Object.keys(groupMatches).forEach(g => {
                         groupMatches[g].forEach(m => {
                             if (m.id !== 'G_A_1' && m.id !== 'G_A_2') {
@@ -959,6 +978,9 @@
                 let assignedGroups = null;
 
                 if (mode === 'full' || mode === 'bracket') {
+                    if (!isEditingOfficialResults && adminData.phase2Locked) {
+                        return alert("Knockout Stage is locked by Admin!");
+                    }
                     if (mode === 'bracket' && !allGroupsComplete()) return alert("Complete groups first!");
                     
                     const thirdsGroups = newThirds.map(t => Object.keys(groupsData).find(g => tempStandings[g][2].name === t));
@@ -1515,8 +1537,13 @@
                             <div className="bg-slate-800 p-6 sm:p-8 rounded-2xl border border-slate-600 max-w-md w-full text-center shadow-2xl transform transition-all">
                                 <h2 className="text-2xl font-bold mb-6 text-white flex items-center justify-center gap-2">🎲 Auto-Fill Options</h2>
                                 <div className="space-y-4">
+                                    {view === 'groups' && (
+                                        <button onClick={() => executeAutoFill('groups')} className="w-full p-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 rounded-xl font-bold text-lg transition shadow-lg border border-green-400/30">
+                                            🎲 Fill Groups Only
+                                        </button>
+                                    )}
                                     <button onClick={() => executeAutoFill('full')} className="w-full p-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-bold text-lg transition shadow-lg border border-indigo-400/30">
-                                        Randomize Entire Tournament
+                                        ⚡ Randomize Full Tournament
                                     </button>
                                 </div>
                                 <button onClick={() => setShowAutoFillModal(false)} className="mt-6 px-8 py-3 bg-slate-900 hover:bg-slate-700 rounded-lg font-bold text-slate-300 transition w-full sm:w-auto">Cancel</button>
@@ -1630,7 +1657,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                {allGroupsComplete() && !isLocked && (
+                                {(allGroupsComplete() || (adminData.phase1Locked && adminData.bracket.r32?.length > 0)) && !isLocked && (
                                     <div className="mt-10 text-center sticky bottom-4 z-30">
                                         <button onClick={() => { generateBracket(); window.scrollTo(0,0); }} className="w-full sm:w-auto px-8 py-4 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-500 shadow-2xl border border-blue-400 transition transform hover:-translate-y-1">Generate Knockout Bracket ➡️</button>
                                     </div>
