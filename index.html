@@ -1255,7 +1255,7 @@
                     if (s.h == aS.h && s.a == aS.a) borderClass = "border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]";
                     else if ((s.h - s.a) === (aS.h - aS.a)) borderClass = "border-yellow-500";
                     else if (Math.sign(s.h - s.a) === Math.sign(aS.h - aS.a) && s.h !== s.a) borderClass = "border-blue-500";
-                    else if (s.h !== '' && s.a !== '') borderClass = "border-red-500 opacity-50";
+                    else if (s.h != null && s.h !== '' && s.a != null && s.a !== '') borderClass = "border-red-500 opacity-50";
                 }
 
                 let crown1 = roundKey === 'final' && match.winner === match.t1 ? '👑' : '';
