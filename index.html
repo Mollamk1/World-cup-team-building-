@@ -742,16 +742,6 @@
                 return () => clearTimeout(timeoutId);
             }, [leagues, adminData]);
 
-            useEffect(() => {
-                if (!isEditingOfficialResults && adminData.phase1Locked && adminData.bracket?.r32?.length > 0 && view === 'bracket') {
-                    const userR32Teams = gameState.bracket?.r32?.map(m => `${m.t1}|${m.t2}`).join(',') || '';
-                    const adminR32Teams = adminData.bracket.r32.map(m => `${m.t1}|${m.t2}`).join(',');
-                    if (userR32Teams !== adminR32Teams) {
-                        generateBracket();
-                    }
-                }
-            }, [view, adminData.bracket?.r32, adminData.phase1Locked, gameState.bracket?.r32, isEditingOfficialResults]);
-
             // --- AUTO-CALCULATE STANDINGS ---
             const calculateGroupStandings = (groupName, currentScores) => {
                 const teams = groupsData[groupName].map(t => ({ name: t, pts: 0, gd: 0, gf: 0, ga: 0, played: 0 }));
@@ -1513,6 +1503,14 @@
                 (view === 'groups' && !adminData.phase1Locked) ||
                 (view === 'bracket' && !adminData.phase2Locked)
             );
+            const userR32TeamsKey = gameState.bracket?.r32?.map(m => `${m.t1}|${m.t2}`).join(',') || '';
+            const adminR32TeamsKey = adminData.bracket?.r32?.map(m => `${m.t1}|${m.t2}`).join(',') || '';
+
+            useEffect(() => {
+                if (!isEditingOfficialResults && isOfficialBracketPublished && view === 'bracket' && userR32TeamsKey !== adminR32TeamsKey) {
+                    generateBracket();
+                }
+            }, [view, isEditingOfficialResults, isOfficialBracketPublished, userR32TeamsKey, adminR32TeamsKey]);
 
             return (
                 <div className="min-h-screen pb-20 relative">
@@ -1561,7 +1559,7 @@
                                     <button onClick={() => {
                                         if (!isEditingOfficialResults && isOfficialBracketPublished) {
                                             generateBracket();
-                                        } else if (isEditingOfficialResults && gameState.bracket.r32?.length > 0) {
+                                        } else if (isEditingOfficialResults && adminData.bracket.r32?.length > 0) {
                                             setView('bracket');
                                         } else {
                                             alert('Generate bracket first!');
