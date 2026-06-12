@@ -639,6 +639,14 @@
             const [isEditingOfficialResults, setIsEditingOfficialResults] = useState(false);
             
             // --- JUNE 12TH EXCEPTION: PRE-FILL SCORES ---
+            const initGameState = () => ({
+                scores: { 'G_A_1': { h: 2, a: 0, p: null }, 'G_A_2': { h: 2, a: 1, p: null } },
+                selectedThirds: [],
+                bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] },
+                progress: 'groups',
+                isLocked: false
+            });
+
             const hardcodedJune12Scores = {
                 'G_A_1': { h: 2, a: 0, p: null }, // Mexico 2-0 South Africa
                 'G_A_2': { h: 2, a: 1, p: null }  // South Korea 2-1 Czechia
@@ -647,23 +655,21 @@
             const enforceLeaguesHardcodedScores = (leagueList = []) => (
                 leagueList.map(league => ({
                     ...league,
-                    users: (league.users || []).map(user => ({
-                        ...user,
-                        gameState: {
-                            ...(user.gameState || initGameState()),
-                            scores: enforceHardcodedScores(user?.gameState?.scores || {})
-                        }
-                    }))
+                    users: (league.users || []).map(user => {
+                        const gs = user.gameState || initGameState();
+                        return {
+                            ...user,
+                            gameState: {
+                                ...gs,
+                                scores: enforceHardcodedScores(gs.scores || {})
+                            }
+                        };
+                    })
                 }))
             );
-            const enforceAdminHardcodedScores = (admin) => ({ ...admin, scores: enforceHardcodedScores(admin?.scores || {}) });
-
-            const initGameState = () => ({ 
-                scores: enforceHardcodedScores({}), 
-                selectedThirds: [], 
-                bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] }, 
-                progress: 'groups', 
-                isLocked: false 
+            const enforceAdminHardcodedScores = (admin) => ({
+                ...admin,
+                scores: enforceHardcodedScores(admin?.scores || {})
             });
             
             const [adminData, setAdminData] = useState({ ...initGameState(), phase1Locked: false, phase2Locked: false });
@@ -821,7 +827,13 @@
                 }
 
                 if (matchId.startsWith('G_')) {
-                    saveState({ scores: newScores, selectedThirds: [], bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] } });
+                    // In admin mode with phase1 already locked, preserve the existing bracket
+                    const shouldClearBracket = !(isEditingOfficialResults && adminData.phase1Locked);
+                    if (!shouldClearBracket) {
+                        saveState({ scores: newScores });
+                    } else {
+                        saveState({ scores: newScores, selectedThirds: [], bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] } });
+                    }
                 } else {
                     const newBracket = JSON.parse(JSON.stringify(bracketSource));
                     let found = false;
@@ -1097,6 +1109,15 @@
             };
 
             // --- USER MANAGEMENT ---
+            const selectUser = (user) => {
+                const freshLeague = leagues.find(l => l.users?.some(u => u.id === user.id)) || currentLeague;
+                setIsEditingOfficialResults(false);
+                setCurrentUser(user);
+                setCurrentLeague(freshLeague);
+                setGameState(user.gameState || initGameState());
+                setView((user.gameState?.progress) || 'groups');
+            };
+
             const addUser = () => {
                 if (!newUserName.trim() || !currentLeague) return;
                 const newUser = { id: Date.now().toString(), name: newUserName, gameState: initGameState() };
@@ -1229,14 +1250,12 @@
                 const isHardcoded = !isEditingOfficialResults && (match.id === 'G_A_1' || match.id === 'G_A_2');
 
                 let borderClass = "border-slate-600";
-                if (!isEditingOfficialResults && adminData.scores?.[match.id]?.h !== undefined && adminData.scores[match.id]?.h !== '') {
-                    const aS = adminData.scores[match.id];
-                    if (aS) {
-                        if (s.h == aS.h && s.a == aS.a) borderClass = "border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]";
-                        else if ((s.h - s.a) === (aS.h - aS.a)) borderClass = "border-yellow-500";
-                        else if (Math.sign(s.h - s.a) === Math.sign(aS.h - aS.a) && s.h !== s.a) borderClass = "border-blue-500";
-                        else borderClass = "border-red-500 opacity-50";
-                    }
+                const aS = adminData.scores?.[match.id];
+                if (!isEditingOfficialResults && aS && aS.h !== '' && aS.h !== undefined) {
+                    if (s.h == aS.h && s.a == aS.a) borderClass = "border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]";
+                    else if ((s.h - s.a) === (aS.h - aS.a)) borderClass = "border-yellow-500";
+                    else if (Math.sign(s.h - s.a) === Math.sign(aS.h - aS.a) && s.h !== s.a) borderClass = "border-blue-500";
+                    else if (s.h !== '' && s.a !== '') borderClass = "border-red-500 opacity-50";
                 }
 
                 let crown1 = roundKey === 'final' && match.winner === match.t1 ? '👑' : '';
@@ -1442,7 +1461,7 @@
                                 const score = calculateScore(u.gameState).total;
                                 return (
                                     <div key={u.id} className="flex bg-slate-700 rounded-xl overflow-hidden border border-slate-600 shadow hover:border-blue-500 transition group relative">
-                                        <button onClick={() => { setGameState(u.gameState); setCurrentUser(u); setView(u.gameState.progress || 'groups'); }} className="flex-1 p-4 hover:bg-blue-600 transition font-bold text-lg text-left flex justify-between items-center">
+                                        <button onClick={() => selectUser(u)} className="flex-1 p-4 hover:bg-blue-600 transition font-bold text-lg text-left flex justify-between items-center">
                                             <span className="truncate mr-2 flex items-center gap-2">{u.gameState.isLocked && <span title="Locked">🔒</span>} {u.name}</span>
                                             <span className="text-xs bg-slate-900 px-2 py-1 rounded-full text-yellow-400 whitespace-nowrap border border-slate-600">{score} pts</span>
                                         </button>
@@ -1533,7 +1552,7 @@
                                         <div className="flex flex-col">
                                             <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">{currentLeague?.name}</span>
                                             <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
-                                                {isLocked && <span title="Locked">🔒</span>} {currentUser?.name} 
+                                                {isLocked && <span title="Locked">🔒</span>} {isEditingOfficialResults ? '🔧 Official Results' : (currentUser?.name || 'Player')}
                                                 <span className="text-sm bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-md">{calculateScore(gameState).total} pts</span>
                                             </h1>
                                         </div>
