@@ -900,7 +900,7 @@
                 
                 // Bug 2 fix: if admin has locked phase 1 and generated the official bracket,
                 // copy that r32 structure (teams only) so all users predict knockouts on real teams.
-                if (!isEditingOfficialResults && adminData.phase1Locked && adminData.bracket.r32?.length > 0) {
+                if (!isEditingOfficialResults && adminData.phase1Locked && adminData.bracket?.r32?.length > 0) {
                     const r32 = adminData.bracket.r32.map(m => ({ id: m.id, label: m.label, t1: m.t1, t2: m.t2, winner: null }));
                     saveState({ selectedThirds: adminData.selectedThirds || [], bracket: { r32, r16: [], qf: [], sf: [], final: [], thirdPlace: [] }, progress: 'bracket' });
                     setView('bracket');
@@ -960,7 +960,7 @@
                 
                 if (mode === 'full' || mode === 'groups') {
                     if (!isEditingOfficialResults && adminData.phase1Locked) {
-                        return alert("Group Stage is locked by Admin! You cannot change group scores.");
+                        return alert("Group Stage is locked by Admin. You cannot change group scores.");
                     }
                     Object.keys(groupMatches).forEach(g => {
                         groupMatches[g].forEach(m => {
@@ -979,7 +979,7 @@
 
                 if (mode === 'full' || mode === 'bracket') {
                     if (!isEditingOfficialResults && adminData.phase2Locked) {
-                        return alert("Knockout Stage is locked by Admin!");
+                        return alert("Knockout Stage is locked by Admin.");
                     }
                     if (mode === 'bracket' && !allGroupsComplete()) return alert("Complete groups first!");
                     
@@ -1657,7 +1657,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                {(allGroupsComplete() || (adminData.phase1Locked && adminData.bracket.r32?.length > 0)) && !isLocked && (
+                                {(allGroupsComplete() || (adminData.phase1Locked && adminData.bracket?.r32?.length > 0)) && !isLocked && (
                                     <div className="mt-10 text-center sticky bottom-4 z-30">
                                         <button onClick={() => { generateBracket(); window.scrollTo(0,0); }} className="w-full sm:w-auto px-8 py-4 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-500 shadow-2xl border border-blue-400 transition transform hover:-translate-y-1">Generate Knockout Bracket ➡️</button>
                                     </div>
