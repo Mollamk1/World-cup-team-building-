@@ -46,7 +46,6 @@
             z-index: 10;
         }
 
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 100; padding: 1rem; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
@@ -675,7 +674,6 @@
             const [newUserName, setNewUserName] = useState('');
             const [editingUserId, setEditingUserId] = useState(null);
             const [editUserNameInput, setEditUserNameInput] = useState('');
-            const [showAutoFillModal, setShowAutoFillModal] = useState(false);
             const [isAILoading, setIsAILoading] = useState(false);
             const [syncStatus, setSyncStatus] = useState('Connecting...');
             
@@ -778,8 +776,11 @@
             // --- GAME LOGIC ---
             const saveState = (updates) => {
                 if (isEditingOfficialResults) { 
-                    setAdminData(prev => ({ ...prev, ...updates })); 
-                    setGameState(prev => ({ ...prev, ...updates })); // FIX: Update UI for Admin
+                    const safeUpdates = updates.scores
+                        ? { ...updates, scores: enforceHardcodedScores(updates.scores) }
+                        : updates;
+                    setAdminData(prev => ({ ...prev, ...safeUpdates })); 
+                    setGameState(prev => ({ ...prev, ...safeUpdates })); // FIX: Update UI for Admin
                     return; 
                 }
                 if (!currentLeague || !currentUser) return;
@@ -794,6 +795,8 @@
 
             const handleScoreChange = (matchId, type, value) => {
                 if (gameState.isLocked && !isEditingOfficialResults) return;
+                const scoresSource = isEditingOfficialResults ? adminData.scores : gameState.scores;
+                const bracketSource = isEditingOfficialResults ? adminData.bracket : gameState.bracket;
                 
                 if (!isEditingOfficialResults) {
                     if (matchId.startsWith('G_') && adminData.phase1Locked) return alert("Group Stage is locked by Admin!");
@@ -810,7 +813,7 @@
                     if (val < 0 || val > 20) return;
                 }
 
-                const newScores = { ...gameState.scores, [matchId]: { ...gameState.scores[matchId], [type]: val } };
+                const newScores = { ...scoresSource, [matchId]: { ...scoresSource[matchId], [type]: val } };
                 
                 if (matchId.startsWith('r') || matchId.startsWith('q') || matchId.startsWith('s') || matchId.startsWith('f') || matchId.startsWith('t')) {
                     const s = newScores[matchId];
@@ -820,7 +823,7 @@
                 if (matchId.startsWith('G_')) {
                     saveState({ scores: newScores, selectedThirds: [], bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] } });
                 } else {
-                    const newBracket = JSON.parse(JSON.stringify(gameState.bracket));
+                    const newBracket = JSON.parse(JSON.stringify(bracketSource));
                     let found = false;
                     const updateWinner = (roundKey) => {
                         if (found) return;
@@ -874,11 +877,12 @@
             };
 
             const allGroupsComplete = () => {
+                const scoresToCheck = isEditingOfficialResults ? adminData.scores : gameState.scores;
                 let complete = true;
                 Object.keys(groupMatches).forEach(g => {
                     groupMatches[g].forEach(m => {
-                        const s = gameState.scores[m.id];
-                        if (!s || s.h === '' || s.a === '') complete = false;
+                        const s = scoresToCheck?.[m.id];
+                        if (!s || s.h == null || s.a == null || s.h === '' || s.a === '') complete = false;
                     });
                 });
                 return complete;
@@ -896,16 +900,14 @@
             };
 
             const generateBracket = () => {
-                if (gameState.isLocked && !isEditingOfficialResults) { setView('bracket'); return; }
-                
-                // Bug 2 fix: if admin has locked phase 1 and generated the official bracket,
-                // copy that r32 structure (teams only) so all users predict knockouts on real teams.
                 if (!isEditingOfficialResults && adminData.phase1Locked && adminData.bracket?.r32?.length > 0) {
                     const r32 = adminData.bracket.r32.map(m => ({ id: m.id, label: m.label, t1: m.t1, t2: m.t2, winner: null }));
                     saveState({ selectedThirds: adminData.selectedThirds || [], bracket: { r32, r16: [], qf: [], sf: [], final: [], thirdPlace: [] }, progress: 'bracket' });
                     setView('bracket');
                     return;
                 }
+
+                if (gameState.isLocked && !isEditingOfficialResults) { setView('bracket'); return; }
                 
                 if (!allGroupsComplete()) return alert("Please complete all 72 Group Stage matches first!");
 
@@ -953,12 +955,14 @@
 
             // --- AUTO-FILL (PATCHED) ---
             const executeAutoFill = (mode) => {
-                setShowAutoFillModal(false);
                 if (gameState.isLocked && !isEditingOfficialResults) return;
                 
-                const newScores = { ...gameState.scores };
+                const activeScores = isEditingOfficialResults ? adminData.scores : gameState.scores;
+                const activeBracket = isEditingOfficialResults ? adminData.bracket : gameState.bracket;
+                const activeThirds = isEditingOfficialResults ? adminData.selectedThirds : gameState.selectedThirds;
+                const newScores = { ...activeScores };
                 
-                if (mode === 'full' || mode === 'groups') {
+                if (mode === 'groups') {
                     if (!isEditingOfficialResults && adminData.phase1Locked) {
                         return alert("Group Stage is locked by Admin. You cannot change group scores.");
                     }
@@ -971,49 +975,14 @@
                     });
                 }
 
-                const tempStandings = {};
-                Object.keys(groupsData).forEach(g => { tempStandings[g] = calculateGroupStandings(g, newScores); });
-                
-                let newThirds = getTop8Thirds(tempStandings);
-                let assignedGroups = null;
-
-                if (mode === 'full' || mode === 'bracket') {
+                if (mode === 'bracket') {
                     if (!isEditingOfficialResults && adminData.phase2Locked) {
                         return alert("Knockout Stage is locked by Admin.");
                     }
                     if (mode === 'bracket' && !allGroupsComplete()) return alert("Complete groups first!");
-                    
-                    const thirdsGroups = newThirds.map(t => Object.keys(groupsData).find(g => tempStandings[g][2].name === t));
-                    const comboKey = [...thirdsGroups].sort().join('');
-                    assignedGroups = fifaMatrix[comboKey];
-                    
-                    if (!assignedGroups) return alert("Auto-fill failed to generate a valid FIFA bracket.");
-
-                    const firsts = {}; const seconds = {};
-                    Object.keys(groupsData).forEach(g => { firsts[g] = tempStandings[g][0].name; seconds[g] = tempStandings[g][1].name; });
-
-                    const tMap = {};
-                    const slots = ['A', 'B', 'D', 'E', 'G', 'I', 'K', 'L'];
-                    slots.forEach((g, i) => { tMap[g] = newThirds.find(t => tempStandings[assignedGroups[g]][2].name === t); });
-
-                    const r32 = [
-                        { id: 'r32_74', label: 'M74', t1: firsts['E'],  t2: tMap['E'],    winner: null },
-                        { id: 'r32_77', label: 'M77', t1: firsts['I'],  t2: tMap['I'],    winner: null },
-                        { id: 'r32_73', label: 'M73', t1: seconds['A'], t2: seconds['B'], winner: null },
-                        { id: 'r32_75', label: 'M75', t1: firsts['F'],  t2: seconds['C'], winner: null },
-                        { id: 'r32_83', label: 'M83', t1: seconds['K'], t2: seconds['L'], winner: null },
-                        { id: 'r32_84', label: 'M84', t1: firsts['H'],  t2: seconds['J'], winner: null },
-                        { id: 'r32_81', label: 'M81', t1: firsts['D'],  t2: tMap['D'],    winner: null },
-                        { id: 'r32_82', label: 'M82', t1: firsts['G'],  t2: tMap['G'],    winner: null },
-                        { id: 'r32_76', label: 'M76', t1: firsts['C'],  t2: seconds['F'], winner: null },
-                        { id: 'r32_78', label: 'M78', t1: seconds['E'], t2: seconds['I'], winner: null },
-                        { id: 'r32_79', label: 'M79', t1: firsts['A'],  t2: tMap['A'],    winner: null },
-                        { id: 'r32_80', label: 'M80', t1: firsts['L'],  t2: tMap['L'],    winner: null },
-                        { id: 'r32_86', label: 'M86', t1: firsts['J'],  t2: seconds['H'], winner: null },
-                        { id: 'r32_88', label: 'M88', t1: seconds['D'], t2: seconds['G'], winner: null },
-                        { id: 'r32_85', label: 'M85', t1: firsts['B'],  t2: tMap['B'],    winner: null },
-                        { id: 'r32_87', label: 'M87', t1: firsts['K'],  t2: tMap['K'],    winner: null },
-                    ];
+                    const currentBracket = JSON.parse(JSON.stringify(activeBracket));
+                    const r32 = currentBracket.r32 || [];
+                    if (!r32.length) return alert("Generate bracket first!");
 
                     const simulateRound = (matches) => {
                         matches.forEach(m => {
@@ -1040,7 +1009,7 @@
                     const thirdPlace = [{ id: 'thirdPlace_0', t1: sf[0].winner === sf[0].t1 ? sf[0].t2 : sf[0].t1, t2: sf[1].winner === sf[1].t1 ? sf[1].t2 : sf[1].t1, winner: null }];
                     simulateRound(thirdPlace);
 
-                    saveState({ scores: newScores, selectedThirds: newThirds, bracket: { r32, r16, qf, sf, final, thirdPlace }, progress: 'bracket' });
+                    saveState({ scores: newScores, selectedThirds: activeThirds || [], bracket: { r32, r16, qf, sf, final, thirdPlace }, progress: 'bracket' });
                     setView('bracket');
                 } else {
                     saveState({ scores: newScores, selectedThirds: [], bracket: { r32: [], r16: [], qf: [], sf: [], final: [], thirdPlace: [] }, progress: 'groups' });
@@ -1528,29 +1497,23 @@
             const progressPercent = getProgress();
             const isLocked = gameState.isLocked;
             const currentStandings = isEditingOfficialResults ? adminStandings : allStandings;
+            const isOfficialBracketPublished = adminData.phase1Locked && adminData.bracket?.r32?.length > 0;
+            const showKnockoutTab = isEditingOfficialResults || isOfficialBracketPublished;
+            const canAutoFillCurrentStage = !isLocked && (
+                (view === 'groups' && !adminData.phase1Locked) ||
+                (view === 'bracket' && !adminData.phase2Locked)
+            );
+            const userR32TeamsKey = gameState.bracket?.r32?.map(m => `${m.t1}|${m.t2}`).join(',') || '';
+            const adminR32TeamsKey = adminData.bracket?.r32?.map(m => `${m.t1}|${m.t2}`).join(',') || '';
+
+            useEffect(() => {
+                if (!isEditingOfficialResults && isOfficialBracketPublished && view === 'bracket' && userR32TeamsKey !== adminR32TeamsKey) {
+                    generateBracket();
+                }
+            }, [view, isEditingOfficialResults, isOfficialBracketPublished, userR32TeamsKey, adminR32TeamsKey, generateBracket]);
 
             return (
                 <div className="min-h-screen pb-20 relative">
-                    {/* AUTO-FILL MODAL */}
-                    {showAutoFillModal && !isLocked && (
-                        <div className="modal-overlay">
-                            <div className="bg-slate-800 p-6 sm:p-8 rounded-2xl border border-slate-600 max-w-md w-full text-center shadow-2xl transform transition-all">
-                                <h2 className="text-2xl font-bold mb-6 text-white flex items-center justify-center gap-2">🎲 Auto-Fill Options</h2>
-                                <div className="space-y-4">
-                                    {view === 'groups' && (
-                                        <button onClick={() => executeAutoFill('groups')} className="w-full p-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 rounded-xl font-bold text-lg transition shadow-lg border border-green-400/30">
-                                            🎲 Fill Groups Only
-                                        </button>
-                                    )}
-                                    <button onClick={() => executeAutoFill('full')} className="w-full p-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl font-bold text-lg transition shadow-lg border border-indigo-400/30">
-                                        ⚡ Randomize Full Tournament
-                                    </button>
-                                </div>
-                                <button onClick={() => setShowAutoFillModal(false)} className="mt-6 px-8 py-3 bg-slate-900 hover:bg-slate-700 rounded-lg font-bold text-slate-300 transition w-full sm:w-auto">Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
                     {/* STICKY HEADER */}
                     <div className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-700 shadow-lg pt-4 pb-4 px-4 sm:px-8 mb-6">
                         <div className="max-w-7xl mx-auto">
@@ -1592,9 +1555,19 @@
                             {/* MAIN TABS */}
                             <div className="flex gap-2 overflow-x-auto hide-scrollbar">
                                 <button onClick={() => setView('groups')} className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg font-bold text-sm sm:text-base whitespace-nowrap transition ${view === 'groups' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'}`}>1. Groups</button>
-                                <button onClick={() => gameState.bracket.r32?.length > 0 ? setView('bracket') : alert('Generate bracket first!')} className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg font-bold text-sm sm:text-base whitespace-nowrap transition ${view === 'bracket' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'}`}>2. Knockouts</button>
-                                {!isLocked && !isEditingOfficialResults && (
-                                    <button onClick={() => setShowAutoFillModal(true)} className="flex-none px-4 py-2.5 bg-indigo-900/40 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-800/50 rounded-lg font-bold text-sm sm:text-base transition flex items-center gap-2">🎲 Auto-Fill</button>
+                                {showKnockoutTab && (
+                                    <button onClick={() => {
+                                        if (!isEditingOfficialResults && isOfficialBracketPublished) {
+                                            generateBracket();
+                                        } else if (isEditingOfficialResults && adminData.bracket.r32?.length > 0) {
+                                            setView('bracket');
+                                        } else {
+                                            alert('Generate bracket first!');
+                                        }
+                                    }} className={`flex-1 sm:flex-none px-4 py-2.5 rounded-lg font-bold text-sm sm:text-base whitespace-nowrap transition ${view === 'bracket' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'}`}>2. Knockouts</button>
+                                )}
+                                {canAutoFillCurrentStage && (
+                                    <button onClick={() => executeAutoFill(view === 'bracket' ? 'bracket' : 'groups')} className="flex-none px-4 py-2.5 bg-indigo-900/40 text-indigo-300 border border-indigo-700/50 hover:bg-indigo-800/50 rounded-lg font-bold text-sm sm:text-base transition flex items-center gap-2">🎲 Auto-Fill</button>
                                 )}
                             </div>
                         </div>
@@ -1657,9 +1630,19 @@
                                         </div>
                                     ))}
                                 </div>
-                                {(allGroupsComplete() || (adminData.phase1Locked && adminData.bracket?.r32?.length > 0)) && !isLocked && (
+                                {!isLocked && (
                                     <div className="mt-10 text-center sticky bottom-4 z-30">
-                                        <button onClick={() => { generateBracket(); window.scrollTo(0,0); }} className="w-full sm:w-auto px-8 py-4 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-500 shadow-2xl border border-blue-400 transition transform hover:-translate-y-1">Generate Knockout Bracket ➡️</button>
+                                        {isEditingOfficialResults ? (
+                                            allGroupsComplete() && (
+                                                <button onClick={() => { generateBracket(); window.scrollTo(0,0); }} className="w-full sm:w-auto px-8 py-4 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-500 shadow-2xl border border-blue-400 transition transform hover:-translate-y-1">Generate Knockout Bracket ➡️</button>
+                                            )
+                                        ) : isOfficialBracketPublished ? (
+                                            <button onClick={() => { generateBracket(); window.scrollTo(0,0); }} className="w-full sm:w-auto px-8 py-4 bg-blue-600 text-white text-lg font-bold rounded-xl hover:bg-blue-500 shadow-2xl border border-blue-400 transition transform hover:-translate-y-1">🏆 Go to Knockout Stage ➡️</button>
+                                        ) : (
+                                            <div className="w-full sm:w-auto px-8 py-4 bg-slate-800/90 text-slate-300 text-lg font-bold rounded-xl border border-slate-700 shadow-2xl">
+                                                ⏳ Waiting for Admin to publish the knockout stage...
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
