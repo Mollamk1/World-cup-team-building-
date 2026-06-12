@@ -644,19 +644,33 @@
                 'G_A_2': { h: 2, a: 1, p: null }  // South Korea 2-1 Czechia
             };
             const enforceHardcodedScores = (scores = {}) => ({ ...scores, ...hardcodedJune12Scores });
+            const BRACKET_ROUNDS = ['r32','r16','qf','sf','final','thirdPlace'];
+            const normalizeBracket = (bracket) => {
+                const b = (bracket && typeof bracket === 'object') ? { ...bracket } : {};
+                BRACKET_ROUNDS.forEach(k => { if (!b[k]) b[k] = []; });
+                return b;
+            };
+            const normalizeGameState = (gs) => {
+                const normalized = { ...initGameState(), ...(gs || {}) };
+                normalized.scores = enforceHardcodedScores(normalized.scores || {});
+                normalized.bracket = normalizeBracket(normalized.bracket);
+                return normalized;
+            };
             const enforceLeaguesHardcodedScores = (leagueList = []) => (
                 leagueList.map(league => ({
                     ...league,
                     users: (league.users || []).map(user => ({
                         ...user,
-                        gameState: {
-                            ...(user.gameState || initGameState()),
-                            scores: enforceHardcodedScores(user?.gameState?.scores || {})
-                        }
+                        gameState: normalizeGameState(user.gameState)
                     }))
                 }))
             );
-            const enforceAdminHardcodedScores = (admin) => ({ ...admin, scores: enforceHardcodedScores(admin?.scores || {}) });
+            const enforceAdminHardcodedScores = (admin) => {
+                const base = { ...initGameState(), phase1Locked: false, phase2Locked: false, ...(admin || {}) };
+                base.scores = enforceHardcodedScores(base.scores || {});
+                base.bracket = normalizeBracket(base.bracket);
+                return base;
+            };
 
             const initGameState = () => ({ 
                 scores: enforceHardcodedScores({}), 
@@ -1114,7 +1128,7 @@
 
             const adminUnlockUser = (userId) => {
                 if (!confirm("Admin: Unlock this user's bracket?")) return;
-                const updatedUsers = currentLeague.users.map(u => u.id === userId ? { ...u, gameState: { ...u.gameState, isLocked: false } } : u);
+                const updatedUsers = currentLeague.users.map(u => u.id === userId ? { ...u, gameState: { ...normalizeGameState(u.gameState), isLocked: false } } : u);
                 const updatedLeague = { ...currentLeague, users: updatedUsers };
                 setLeagues(leagues.map(l => l.id === currentLeague.id ? updatedLeague : l)); setCurrentLeague(updatedLeague);
             };
@@ -1442,7 +1456,7 @@
                                 const score = calculateScore(u.gameState).total;
                                 return (
                                     <div key={u.id} className="flex bg-slate-700 rounded-xl overflow-hidden border border-slate-600 shadow hover:border-blue-500 transition group relative">
-                                        <button onClick={() => { const gs = u.gameState || initGameState(); setGameState(gs); setCurrentUser(u); setView(gs.progress || 'groups'); }} className="flex-1 p-4 hover:bg-blue-600 transition font-bold text-lg text-left flex justify-between items-center">
+                                        <button onClick={() => { const gs = normalizeGameState(u.gameState); setGameState(gs); setCurrentUser(u); setView(gs.progress || 'groups'); }} className="flex-1 p-4 hover:bg-blue-600 transition font-bold text-lg text-left flex justify-between items-center">
                                             <span className="truncate mr-2 flex items-center gap-2">{u.gameState?.isLocked && <span title="Locked">🔒</span>} {u.name}</span>
                                             <span className="text-xs bg-slate-900 px-2 py-1 rounded-full text-yellow-400 whitespace-nowrap border border-slate-600">{score} pts</span>
                                         </button>
