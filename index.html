@@ -882,7 +882,7 @@
                 Object.keys(groupMatches).forEach(g => {
                     groupMatches[g].forEach(m => {
                         const s = scoresToCheck?.[m.id];
-                        if (!s || s.h === '' || s.h === undefined || s.a === '' || s.a === undefined) complete = false;
+                        if (!s || s.h == null || s.a == null || s.h === '' || s.a === '') complete = false;
                     });
                 });
                 return complete;
@@ -1510,7 +1510,7 @@
                 if (!isEditingOfficialResults && isOfficialBracketPublished && view === 'bracket' && userR32TeamsKey !== adminR32TeamsKey) {
                     generateBracket();
                 }
-            }, [view, isEditingOfficialResults, isOfficialBracketPublished, userR32TeamsKey, adminR32TeamsKey]);
+            }, [view, isEditingOfficialResults, isOfficialBracketPublished, userR32TeamsKey, adminR32TeamsKey, generateBracket]);
 
             return (
                 <div className="min-h-screen pb-20 relative">
