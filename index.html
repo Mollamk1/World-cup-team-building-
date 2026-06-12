@@ -1415,7 +1415,7 @@
                         <div className="flex justify-center mb-4"><span className={`text-xs font-bold px-3 py-1 rounded-full border ${syncStatus.includes('Error') || syncStatus.includes('Failed') || syncStatus.includes('Offline') ? 'bg-red-900/50 text-red-400 border-red-700' : 'bg-blue-900/50 text-blue-400 border-blue-700'}`}>{syncStatus}</span></div>
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4 border-b border-slate-700 pb-6">
                             <button onClick={() => setView('leagues')} className="w-full sm:w-auto px-4 py-2 bg-slate-700 rounded-lg hover:bg-slate-600 text-sm font-bold transition">⬅ Back to Leagues</button>
-                            <h1 className="text-2xl sm:text-4xl font-bold text-blue-400 truncate px-4">{currentLeague.name}</h1>
+                            <h1 className="text-2xl sm:text-4xl font-bold text-blue-400 truncate px-4">{currentLeague?.name || 'League'}</h1>
                             <div className="flex gap-2 w-full sm:w-auto">
                                 {isAdminLoggedIn && <button onClick={generateShareLink} className="flex-1 sm:flex-none px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 font-bold text-sm shadow-lg transition">🔗 Copy Live Link</button>}
                                 <button onClick={() => setView('leaderboard')} className="flex-1 sm:flex-none px-4 py-2 bg-gradient-to-r from-yellow-600 to-yellow-500 text-yellow-50 rounded-lg hover:from-yellow-500 hover:to-yellow-400 font-bold text-sm shadow-lg transition">🏆 Leaderboard</button>
@@ -1438,16 +1438,16 @@
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {(currentLeague.users || []).map(u => {
+                            {(currentLeague?.users || []).map(u => {
                                 const score = calculateScore(u.gameState).total;
                                 return (
                                     <div key={u.id} className="flex bg-slate-700 rounded-xl overflow-hidden border border-slate-600 shadow hover:border-blue-500 transition group relative">
-                                        <button onClick={() => { setGameState(u.gameState); setCurrentUser(u); setView(u.gameState.progress || 'groups'); }} className="flex-1 p-4 hover:bg-blue-600 transition font-bold text-lg text-left flex justify-between items-center">
-                                            <span className="truncate mr-2 flex items-center gap-2">{u.gameState.isLocked && <span title="Locked">🔒</span>} {u.name}</span>
+                                        <button onClick={() => { const gs = u.gameState || initGameState(); setGameState(gs); setCurrentUser(u); setView(gs.progress || 'groups'); }} className="flex-1 p-4 hover:bg-blue-600 transition font-bold text-lg text-left flex justify-between items-center">
+                                            <span className="truncate mr-2 flex items-center gap-2">{u.gameState?.isLocked && <span title="Locked">🔒</span>} {u.name}</span>
                                             <span className="text-xs bg-slate-900 px-2 py-1 rounded-full text-yellow-400 whitespace-nowrap border border-slate-600">{score} pts</span>
                                         </button>
-                                        {isAdminLoggedIn && u.gameState.isLocked && <button onClick={() => adminUnlockUser(u.id)} className="px-3 bg-red-900/50 hover:bg-red-800 transition border-l border-slate-600 text-red-300" title="Admin Unlock">🔓</button>}
-                                       {isAdminLoggedIn && <button onClick={() => { if (confirm(`Remove "${u.name}" from this league?`)) { const updatedUsers = currentLeague.users.filter(x => x.id !== u.id); const updatedLeague = { ...currentLeague, users: updatedUsers }; setLeagues(leagues.map(l => l.id === currentLeague.id ? updatedLeague : l)); setCurrentLeague(updatedLeague); } }} className="px-3 bg-red-900/50 hover:bg-red-800 transition border-l border-slate-600 text-red-400 font-bold" title="Delete Player">✕</button>}
+                                        {isAdminLoggedIn && u.gameState?.isLocked && <button onClick={() => adminUnlockUser(u.id)} className="px-3 bg-red-900/50 hover:bg-red-800 transition border-l border-slate-600 text-red-300" title="Admin Unlock">🔓</button>}
+                                       {isAdminLoggedIn && <button onClick={() => { if (confirm(`Remove "${u.name}" from this league?`)) { const updatedUsers = (currentLeague?.users || []).filter(x => x.id !== u.id); const updatedLeague = { ...currentLeague, users: updatedUsers }; setLeagues(leagues.map(l => l.id === currentLeague?.id ? updatedLeague : l)); setCurrentLeague(updatedLeague); } }} className="px-3 bg-red-900/50 hover:bg-red-800 transition border-l border-slate-600 text-red-400 font-bold" title="Delete Player">✕</button>}
                                     </div>
                                 );
                             })}
@@ -1457,13 +1457,14 @@
             }
 
             if (view === 'leaderboard') {
-                const rankedUsers = [...(currentLeague.users || [])].map(u => ({ ...u, scoreObj: calculateScore(u.gameState) })).sort((a, b) => b.scoreObj.total - a.scoreObj.total);
+                if (!currentLeague) return setView('leagues');
+                const rankedUsers = [...(currentLeague?.users || [])].map(u => ({ ...u, scoreObj: calculateScore(u.gameState) })).sort((a, b) => b.scoreObj.total - a.scoreObj.total);
                 return (
                     <div className="max-w-5xl mx-auto mt-4 sm:mt-10 p-4 sm:p-8 bg-slate-800 rounded-xl border border-slate-700 shadow-2xl">
                         <div className="flex justify-center mb-4"><span className={`text-xs font-bold px-3 py-1 rounded-full border ${syncStatus.includes('Error') || syncStatus.includes('Failed') || syncStatus.includes('Offline') ? 'bg-red-900/50 text-red-400 border-red-700' : 'bg-blue-900/50 text-blue-400 border-blue-700'}`}>{syncStatus}</span></div>
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4 border-b border-slate-700 pb-6">
                             <button onClick={() => setView('users')} className="w-full sm:w-auto px-4 py-2 bg-slate-700 rounded-lg hover:bg-slate-600 font-bold transition">⬅ Back to Players</button>
-                            <h1 className="text-2xl sm:text-3xl font-bold text-yellow-400 flex items-center gap-2">🏆 {currentLeague.name} Leaderboard</h1>
+                            <h1 className="text-2xl sm:text-3xl font-bold text-yellow-400 flex items-center gap-2">🏆 {currentLeague?.name || 'League'} Leaderboard</h1>
                             <div className="w-full sm:w-24"></div>
                         </div>
                         <div className="overflow-x-auto rounded-lg border border-slate-700">
@@ -1481,7 +1482,7 @@
                                     {rankedUsers.map((u, index) => (
                                         <tr key={u.id} className="hover:bg-slate-700/50 transition border-b border-slate-700/50 last:border-0">
                                             <td className="p-4 font-bold text-lg text-slate-400">{index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}</td>
-                                            <td className="p-4 font-bold text-white flex items-center gap-2">{u.gameState.isLocked && <span className="text-xs" title="Locked">🔒</span>} {u.name}</td>
+                                            <td className="p-4 font-bold text-white flex items-center gap-2">{u.gameState?.isLocked && <span className="text-xs" title="Locked">🔒</span>} {u.name}</td>
                                             <td className="p-4 text-center text-blue-300 font-bold">{u.scoreObj.matchPts}</td>
                                             <td className="p-4 text-center text-green-300 font-bold">{u.scoreObj.bracketPts}</td>
                                             <td className="p-4 text-right font-black text-yellow-400 text-xl">{u.scoreObj.total}</td>
